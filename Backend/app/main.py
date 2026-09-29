@@ -9,13 +9,12 @@ from app.api.router import api_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize database tables
-    init_tables()
-    try:
-        from app.core.seed import seed_database
-        seed_database()
-    except Exception as e:
-        print("Seed notice:", e)
+    # Only create tables locally for SQLite; in production, tables are managed externally
+    if settings.DATABASE_URL.startswith("sqlite"):
+        try:
+            init_tables()
+        except Exception as e:
+            print("SQLite init notice:", e)
     yield
 
 app = FastAPI(

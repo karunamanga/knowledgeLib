@@ -4,6 +4,8 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    WEB_CONCURRENCY=1 \
+    MALLOC_ARENA_MAX=2 \
     PORT=8000
 
 # Install requirements (psycopg2-binary provides pre-compiled Linux wheels)
