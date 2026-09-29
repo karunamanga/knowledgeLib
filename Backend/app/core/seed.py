@@ -394,6 +394,8 @@ def seed_database():
 
     finally:
         db.close()
+        import gc
+        gc.collect()
 
 if __name__ == "__main__":
     seed_database()
