@@ -7,7 +7,7 @@ import { Button } from '../../components/common/Button';
 import { ResourceTypeBadge } from '../../components/common/Badge';
 import { UserAvatar } from '../../components/common/UserAvatar';
 import { knowledgeApi } from '../../api/endpoints';
-import { getAccessToken } from '../../api/client';
+import { getAccessToken, API_BASE_URL } from '../../api/client';
 import {
   Download,
   ExternalLink,
@@ -52,7 +52,7 @@ const WordDocumentViewer: React.FC<WordDocumentViewerProps> = ({
     setLoading(true);
     setRenderError(null);
 
-    const downloadUrl = `/api/v1/knowledge/${resourceId}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    const downloadUrl = `${API_BASE_URL}/knowledge/${resourceId}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`;
 
     fetch(downloadUrl, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -179,7 +179,7 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
   const canDelete = isAuthor || hasRole('ADMIN') || hasPermission('knowledge:delete');
 
   const token = getAccessToken();
-  const directPublicUrl = resource.download_url || (resource.storage_key ? `/api/v1/knowledge/files/${resource.storage_key}` : '');
+  const directPublicUrl = resource.download_url || (resource.storage_key ? `${API_BASE_URL}/knowledge/files/${resource.storage_key}` : '');
 
   const handleDelete = async () => {
     if (!window.confirm(`Are you sure you want to delete "${resource.title}"?`)) {
@@ -204,7 +204,7 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
 
     setIsDownloading(true);
     try {
-      const downloadEndpoint = `/api/v1/knowledge/${resource.id}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+      const downloadEndpoint = `${API_BASE_URL}/knowledge/${resource.id}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`;
 
       const res = await fetch(downloadEndpoint, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -229,7 +229,7 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
     } catch (err: any) {
       // Fallback
       const token = getAccessToken();
-      window.open(`/api/v1/knowledge/${resource.id}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`, '_blank');
+      window.open(`${API_BASE_URL}/knowledge/${resource.id}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`, '_blank');
     } finally {
       setIsDownloading(false);
     }
