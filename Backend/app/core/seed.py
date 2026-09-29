@@ -1,4 +1,4 @@
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
 from app.core.init_db import init_tables
@@ -110,7 +110,7 @@ def seed_database():
             full_name="Sarah Jenkins",
             designation="VP of Engineering",
             department="Leadership & Engineering",
-            joining_date=datetime.utcnow() - timedelta(days=700),
+            joining_date=datetime.now(timezone.utc) - timedelta(days=700),
             avatar_url="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80",
             roles=[admin_role]
         )
@@ -121,7 +121,7 @@ def seed_database():
             full_name="Alex Rivera",
             designation="Principal Architect & Tech Lead",
             department="Platform Engineering",
-            joining_date=datetime.utcnow() - timedelta(days=500),
+            joining_date=datetime.now(timezone.utc) - timedelta(days=500),
             avatar_url="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
             roles=[mentor_role]
         )
@@ -132,7 +132,7 @@ def seed_database():
             full_name="Ravi Kumar",
             designation="Associate Software Engineer",
             department="Backend Engineering",
-            joining_date=datetime.utcnow() - timedelta(days=90),
+            joining_date=datetime.now(timezone.utc) - timedelta(days=90),
             avatar_url="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
             roles=[employee_role]
         )
@@ -143,7 +143,7 @@ def seed_database():
             full_name="Priya Sharma",
             designation="Frontend Engineer Intern",
             department="UI Engineering",
-            joining_date=datetime.utcnow() - timedelta(days=45),
+            joining_date=datetime.now(timezone.utc) - timedelta(days=45),
             avatar_url="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
             roles=[employee_role]
         )
@@ -269,8 +269,8 @@ def seed_database():
         db.commit()
 
         # Mark modules 1 and 2 completed for Ravi
-        db.add(UserModuleProgress(user_id=employee_ravi.id, module_id=m1.id, is_completed=True, completed_at=datetime.utcnow() - timedelta(days=5)))
-        db.add(UserModuleProgress(user_id=employee_ravi.id, module_id=m2.id, is_completed=True, completed_at=datetime.utcnow() - timedelta(days=2)))
+        db.add(UserModuleProgress(user_id=employee_ravi.id, module_id=m1.id, is_completed=True, completed_at=datetime.now(timezone.utc) - timedelta(days=5)))
+        db.add(UserModuleProgress(user_id=employee_ravi.id, module_id=m2.id, is_completed=True, completed_at=datetime.now(timezone.utc) - timedelta(days=2)))
         db.add(UserPathProgress(user_id=employee_ravi.id, path_id=lp1.id, progress_percentage=40.0, status="IN_PROGRESS"))
         db.commit()
 
@@ -314,8 +314,8 @@ def seed_database():
             status=SubmissionStatus.APPROVED,
             reviewer_id=mentor_user.id,
             feedback="Excellent work! The route separation and Pydantic validation schemas look clean and adhere strictly to our enterprise standards.",
-            submitted_at=datetime.utcnow() - timedelta(days=2),
-            reviewed_at=datetime.utcnow() - timedelta(days=1)
+            submitted_at=datetime.now(timezone.utc) - timedelta(days=2),
+            reviewed_at=datetime.now(timezone.utc) - timedelta(days=1)
         )
         db.add(sub1)
         db.commit()
@@ -339,7 +339,7 @@ def seed_database():
             title="PostgreSQL Schema & Indexing Benchmark Submission",
             description="Submitted schema migration scripts and benchmark comparison of queries with and without indexes.",
             status=SubmissionStatus.SUBMITTED,
-            submitted_at=datetime.utcnow() - timedelta(hours=4)
+            submitted_at=datetime.now(timezone.utc) - timedelta(hours=4)
         )
         db.add(sub2)
         db.commit()

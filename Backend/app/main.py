@@ -11,6 +11,11 @@ from app.api.router import api_router
 async def lifespan(app: FastAPI):
     # Initialize database tables
     init_tables()
+    try:
+        from app.core.seed import seed_database
+        seed_database()
+    except Exception as e:
+        print("Seed notice:", e)
     yield
 
 app = FastAPI(

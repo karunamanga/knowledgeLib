@@ -2,21 +2,20 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies for postgres and libpq
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=8000
 
+# Install requirements (psycopg2-binary provides pre-compiled Linux wheels)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Create upload directory
+# Create upload directory for temporary / local asset storage
 RUN mkdir -p /app/storage_uploads
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python -m app.core.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# Start lightweight Uvicorn server with dynamic port and single worker for memory efficiency
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --limit-concurrency 50"]
