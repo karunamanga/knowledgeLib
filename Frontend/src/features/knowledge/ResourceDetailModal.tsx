@@ -49,7 +49,7 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
   const token = getAccessToken();
 
   const previewImageUrl = getFullApiUrl(
-    resource.preview_url || `/api/v1/knowledge/${resource.id}/preview`
+    `/api/v1/knowledge/${resource.id}/preview`
   );
 
   const handleDelete = async () => {
@@ -71,8 +71,7 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
     setIsDownloading(true);
     try {
       const downloadEndpoint = getFullApiUrl(
-        resource.download_url ||
-          `/api/v1/knowledge/${resource.id}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`
+        `/api/v1/knowledge/${resource.id}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`
       );
 
       const res = await fetch(downloadEndpoint, {

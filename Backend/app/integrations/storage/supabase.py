@@ -123,9 +123,7 @@ class SupabaseStorage(StorageInterface):
         return True
 
     def generate_url(self, storage_key: str) -> str:
-        if self.is_configured:
-            return f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{storage_key}"
-        return self._fallback_local.generate_url(storage_key)
+        return f"{settings.API_V1_STR}/knowledge/files/{storage_key}"
 
     def exists(self, storage_key: str) -> bool:
         if self._fallback_local.exists(storage_key):

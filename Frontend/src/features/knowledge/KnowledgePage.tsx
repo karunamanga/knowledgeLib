@@ -122,8 +122,7 @@ export const KnowledgePage: React.FC = () => {
     try {
       const token = getAccessToken();
       const downloadUrl = getFullApiUrl(
-        res.download_url ||
-          `/api/v1/knowledge/${res.id}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`
+        `/api/v1/knowledge/${res.id}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`
       );
       const response = await fetch(downloadUrl, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -319,9 +318,7 @@ export const KnowledgePage: React.FC = () => {
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {resources.map((res) => {
-            const previewUrl = getFullApiUrl(
-              res.preview_url || `/api/v1/knowledge/${res.id}/preview`
-            );
+            const previewUrl = getFullApiUrl(`/api/v1/knowledge/${res.id}/preview`);
             const fileTypeBadge = (
               res.file_type ||
               res.original_filename?.split('.').pop() ||
@@ -452,9 +449,7 @@ export const KnowledgePage: React.FC = () => {
         /* List View */
         <div className="divide-y divide-slate-100 dark:divide-slate-800 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-sm">
           {resources.map((res) => {
-            const previewUrl = getFullApiUrl(
-              res.preview_url || `/api/v1/knowledge/${res.id}/preview`
-            );
+            const previewUrl = getFullApiUrl(`/api/v1/knowledge/${res.id}/preview`);
             const fileTypeBadge = (
               res.file_type ||
               res.original_filename?.split('.').pop() ||

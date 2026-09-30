@@ -1,9 +1,38 @@
 import io
 import re
+import struct
+import zlib
 import zipfile
 import xml.etree.ElementTree as ET
 from typing import Optional, Tuple
-from PIL import Image, ImageDraw, ImageFont
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
+def _create_fallback_png(width: int = 400, height: int = 300) -> bytes:
+    """Generate a clean, valid PNG without any external dependencies."""
+    header = b'\x89PNG\r\n\x1a\n'
+    ihdr_data = struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)
+    ihdr_crc = struct.pack('>I', zlib.crc32(b'IHDR' + ihdr_data) & 0xffffffff)
+    ihdr = struct.pack('>I', len(ihdr_data)) + b'IHDR' + ihdr_data + ihdr_crc
+    
+    raw_data = bytearray()
+    for y in range(height):
+        raw_data.append(0)
+        for x in range(width):
+            if y < 6 or y > height - 6 or x < 6 or x > width - 6:
+                raw_data.extend((99, 102, 241))  # Indigo border
+            else:
+                raw_data.extend((248, 250, 252)) # Light slate
+    
+    compressed = zlib.compress(bytes(raw_data))
+    idat_crc = struct.pack('>I', zlib.crc32(b'IDAT' + compressed) & 0xffffffff)
+    idat = struct.pack('>I', len(compressed)) + b'IDAT' + compressed + idat_crc
+    iend = struct.pack('>I', 0) + b'IEND' + struct.pack('>I', zlib.crc32(b'IEND') & 0xffffffff)
+    return header + ihdr + idat + iend
 
 def _get_font(size: int, bold: bool = False):
     try:
@@ -294,6 +323,9 @@ def generate_document_thumbnail(file_bytes: bytes, file_name: str, title: str) -
     Main thumbnail generation dispatcher for PDF, DOC, DOCX, PPT, PPTX.
     Returns (png_bytes, 'image/png').
     """
+    if not HAS_PIL:
+        return _create_fallback_png(), "image/png"
+
     ext = (file_name or "").split(".")[-1].lower()
     
     if ext == "pdf":
