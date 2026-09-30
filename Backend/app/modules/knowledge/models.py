@@ -22,8 +22,16 @@ class Resource(Base):
     category_id = Column(Integer, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True, index=True)
     author_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     
-    # File Storage or External link
-    storage_key = Column(String(255), nullable=True)
+    # File Storage and Preview fields
+    file_path = Column(String(500), nullable=True, index=True)
+    preview_path = Column(String(500), nullable=True)
+    file_name = Column(String(255), nullable=True)
+    file_type = Column(String(50), nullable=True, index=True)  # PDF, DOC, DOCX, PPT, PPTX
+    mime_type = Column(String(100), nullable=True)
+    storage_bucket = Column(String(100), default="portal-files", nullable=True)
+
+    # Backward compatibility aliases
+    storage_key = Column(String(500), nullable=True)
     original_filename = Column(String(255), nullable=True)
     external_url = Column(String(1000), nullable=True)
     file_size = Column(Integer, nullable=True)

@@ -6,13 +6,15 @@ import { Button } from '../../components/common/Button';
 import { useToast } from '../../context/ToastContext';
 import { categoriesApi, knowledgeApi } from '../../api/endpoints';
 import { ResourceType } from '../../types';
-import { UploadCloud, Link as LinkIcon, FileText, Plus } from 'lucide-react';
+import { UploadCloud, FileText, Plus, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface ResourceUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
 }
+
+const ALLOWED_EXTENSIONS = ['pdf', 'doc', 'docx', 'ppt', 'pptx'];
 
 export const ResourceUploadModal: React.FC<ResourceUploadModalProps> = ({
   isOpen,
@@ -21,11 +23,12 @@ export const ResourceUploadModal: React.FC<ResourceUploadModalProps> = ({
 }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [resourceType, setResourceType] = useState<ResourceType>('DOCUMENT');
+  const [detectedType, setDetectedType] = useState<ResourceType>('DOCUMENT');
+  const [detectedExtension, setDetectedExtension] = useState<string>('');
   const [categoryId, setCategoryId] = useState<number | undefined>(undefined);
   const [tagsInput, setTagsInput] = useState('');
-  const [externalUrl, setExternalUrl] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const { success, error } = useToast();
@@ -39,9 +42,30 @@ export const ResourceUploadModal: React.FC<ResourceUploadModalProps> = ({
   const categories = categoriesData?.data.data || [];
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFileError(null);
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        setFileError(`Unsupported format .${ext}. Only PDF, DOC, DOCX, PPT, and PPTX are supported.`);
+        setSelectedFile(null);
+        setDetectedExtension('');
+        return;
+      }
+
       setSelectedFile(file);
+      setDetectedExtension(ext.toUpperCase());
+
+      // Auto-detect resource type
+      if (ext === 'pdf') {
+        setDetectedType('PDF');
+      } else if (ext === 'ppt' || ext === 'pptx') {
+        setDetectedType('PRESENTATION');
+      } else {
+        setDetectedType('DOCUMENT');
+      }
+
       if (!title) {
         setTitle(file.name.replace(/\.[^/.]+$/, ''));
       }
@@ -50,8 +74,13 @@ export const ResourceUploadModal: React.FC<ResourceUploadModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title) {
+    if (!title.trim()) {
       error('Please specify a title for the resource.', 'Validation');
+      return;
+    }
+
+    if (!selectedFile) {
+      error('Please select a document file (PDF, DOC, DOCX, PPT, or PPTX).', 'Validation');
       return;
     }
 
@@ -63,23 +92,24 @@ export const ResourceUploadModal: React.FC<ResourceUploadModalProps> = ({
         .filter(Boolean);
 
       const formData = new FormData();
-      formData.append('title', title);
-      if (description) formData.append('description', description);
-      formData.append('resource_type', resourceType);
+      formData.append('title', title.trim());
+      if (description.trim()) formData.append('description', description.trim());
+      formData.append('resource_type', detectedType);
       if (categoryId) formData.append('category_id', String(categoryId));
-      if (externalUrl) formData.append('external_url', externalUrl);
       if (tagList.length > 0) formData.append('tags', JSON.stringify(tagList));
-      if (selectedFile) formData.append('file', selectedFile);
+      formData.append('file', selectedFile);
 
       await knowledgeApi.upload(formData);
       success('Resource uploaded to company knowledge base!', 'Success');
-      
+
       // Reset form
       setTitle('');
       setDescription('');
       setSelectedFile(null);
-      setExternalUrl('');
+      setDetectedExtension('');
       setTagsInput('');
+      setCategoryId(undefined);
+      setFileError(null);
       onClose();
       if (onSuccess) onSuccess();
     } catch (err: any) {
@@ -95,10 +125,70 @@ export const ResourceUploadModal: React.FC<ResourceUploadModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title="Upload Knowledge Resource"
-      description="Contribute documentation, architecture blueprints, guides, or presentations."
+      description="Upload architectural documents, technical guides, or presentations (PDF, DOC, DOCX, PPT, PPTX)."
       size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4 text-left">
+        {/* Document File Dropzone */}
+        <div className="space-y-2">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+            Document File * (PDF, DOC, DOCX, PPT, PPTX)
+          </label>
+          <div
+            className={`flex flex-col items-center justify-center p-5 border-2 border-dashed rounded-2xl transition-all ${
+              fileError
+                ? 'border-rose-400 bg-rose-50/50 dark:bg-rose-950/20'
+                : selectedFile
+                ? 'border-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20'
+                : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 hover:border-indigo-400 dark:hover:border-indigo-600'
+            }`}
+          >
+            <label className="flex flex-col items-center gap-2 cursor-pointer text-center w-full">
+              {selectedFile ? (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="p-3 rounded-2xl bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400">
+                    <CheckCircle2 className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-100 block">
+                      {selectedFile.name}
+                    </span>
+                    <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">
+                      {(selectedFile.size / 1024 / 1024).toFixed(2)} MB • Auto-detected: {detectedExtension} ({detectedType})
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-400 underline mt-1">
+                    Click to replace file
+                  </span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="p-3 rounded-2xl bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400">
+                    <UploadCloud className="w-8 h-8" />
+                  </div>
+                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    Choose a document to upload
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    Supports PDF, DOC, DOCX, PPT, PPTX (Up to 50MB)
+                  </span>
+                </div>
+              )}
+              <input
+                type="file"
+                className="hidden"
+                accept=".pdf,.doc,.docx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                onChange={handleFileChange}
+              />
+            </label>
+          </div>
+          {fileError && (
+            <p className="text-xs text-rose-500 flex items-center gap-1">
+              <AlertCircle className="w-3.5 h-3.5" /> {fileError}
+            </p>
+          )}
+        </div>
+
         <Input
           label="Resource Title *"
           placeholder="e.g. Distributed Caching Patterns with Redis"
@@ -114,33 +204,13 @@ export const ResourceUploadModal: React.FC<ResourceUploadModalProps> = ({
           <textarea
             rows={3}
             className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-            placeholder="Briefly explain what this resource covers and who should read it..."
+            placeholder="Briefly explain what this document covers and who should read it..."
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-              Resource Type
-            </label>
-            <select
-              value={resourceType}
-              onChange={(e) => setResourceType(e.target.value as ResourceType)}
-              className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-            >
-              <option value="DOCUMENT">Document</option>
-              <option value="PRESENTATION">Presentation (Deck)</option>
-              <option value="PDF">PDF Guide</option>
-              <option value="ARCHITECTURE">Architecture Blueprint</option>
-              <option value="DIAGRAM">System Diagram</option>
-              <option value="VIDEO">Video Tutorial</option>
-              <option value="LINK">External Documentation Link</option>
-              <option value="OTHER">Other</option>
-            </select>
-          </div>
-
           <div className="space-y-1.5">
             <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
               Category
@@ -158,36 +228,16 @@ export const ResourceUploadModal: React.FC<ResourceUploadModalProps> = ({
               ))}
             </select>
           </div>
-        </div>
 
-        {/* File Picker or Link input */}
-        <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-            Attach Document / Asset
-          </label>
-          <div className="flex items-center justify-center p-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors bg-slate-50/50 dark:bg-slate-900/50">
-            <label className="flex flex-col items-center gap-1.5 cursor-pointer text-center">
-              <UploadCloud className="w-7 h-7 text-indigo-500" />
-              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                {selectedFile ? selectedFile.name : 'Click to browse files (PDF, PPT, DOC, Image)'}
-              </span>
-              <span className="text-[10px] text-slate-400">
-                {selectedFile
-                  ? `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB`
-                  : 'Up to 50MB file size'}
-              </span>
-              <input type="file" className="hidden" onChange={handleFileChange} />
+          <div className="space-y-1.5">
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+              Detected File Type
             </label>
+            <div className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 px-3.5 py-2 text-sm text-slate-700 dark:text-slate-300 font-medium">
+              {detectedExtension ? `${detectedExtension} • ${detectedType}` : 'Auto-detected upon file selection'}
+            </div>
           </div>
         </div>
-
-        <Input
-          label="External URL / Reference Link (Optional)"
-          placeholder="https://docs.company.internal/..."
-          value={externalUrl}
-          onChange={(e) => setExternalUrl(e.target.value)}
-          leftIcon={<LinkIcon className="w-4 h-4" />}
-        />
 
         <Input
           label="Tags (Comma-separated)"

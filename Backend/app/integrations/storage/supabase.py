@@ -29,14 +29,17 @@ class SupabaseStorage(StorageInterface):
             "apikey": self.api_key,
         }
 
-    def upload(self, file_content: bytes, original_filename: str, content_type: str) -> Dict[str, Any]:
-        if not self.is_configured:
-            return self._fallback_local.upload(file_content, original_filename, content_type)
+    def upload(self, file_content: bytes, original_filename: str, content_type: str, custom_key: Optional[str] = None) -> Dict[str, Any]:
+        if custom_key:
+            storage_key = custom_key.strip("/")
+        else:
+            ext = Path(original_filename).suffix
+            unique_id = str(uuid.uuid4())
+            storage_key = f"{unique_id}{ext}"
 
-        ext = Path(original_filename).suffix
-        unique_id = str(uuid.uuid4())
-        storage_key = f"{unique_id}{ext}"
-        
+        if not self.is_configured:
+            return self._fallback_local.upload(file_content, original_filename, content_type, custom_key=storage_key)
+
         url = f"{self.supabase_url}/storage/v1/object/{self.bucket}/{storage_key}"
         headers = self._get_headers()
         headers["Content-Type"] = content_type or "application/octet-stream"
@@ -47,7 +50,7 @@ class SupabaseStorage(StorageInterface):
                 if res.status_code in [200, 201]:
                     # Also write locally for instant cache/offline access
                     try:
-                        self._fallback_local.upload(file_content, original_filename, content_type)
+                        self._fallback_local.upload(file_content, original_filename, content_type, custom_key=storage_key)
                     except Exception:
                         pass
                     return {
@@ -59,8 +62,8 @@ class SupabaseStorage(StorageInterface):
         except Exception as e:
             print("Supabase upload exception:", e)
 
-        # Fallback to local storage
-        return self._fallback_local.upload(file_content, original_filename, content_type)
+        # Fallback to local storage with identical storage_key
+        return self._fallback_local.upload(file_content, original_filename, content_type, custom_key=storage_key)
 
     def download(self, storage_key: str) -> Tuple[bytes, str, str]:
         # Check local cache first for speed

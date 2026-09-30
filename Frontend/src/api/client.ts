@@ -2,6 +2,17 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
+export const getFullApiUrl = (path?: string): string => {
+  if (!path) return '';
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  const baseUrl = API_BASE_URL.replace(/\/+$/, '');
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  if (cleanPath.startsWith('/api/v1') && baseUrl.endsWith('/api/v1')) {
+    return `${baseUrl.slice(0, -7)}${cleanPath}`;
+  }
+  return `${baseUrl}${cleanPath}`;
+};
+
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {

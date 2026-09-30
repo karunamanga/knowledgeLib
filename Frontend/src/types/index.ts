@@ -107,6 +107,15 @@ export interface Resource {
   category?: Category;
   author_id: number;
   author: ResourceAuthor;
+  file_path?: string;
+  preview_path?: string;
+  file_name?: string;
+  file_type?: string;
+  mime_type?: string;
+  storage_bucket?: string;
+  preview_url?: string;
+  file_url?: string;
+  download_url?: string;
   storage_key?: string;
   original_filename?: string;
   external_url?: string;
@@ -115,7 +124,6 @@ export interface Resource {
   view_count: number;
   download_count: number;
   tags: Tag[];
-  download_url?: string;
   created_at: string;
   updated_at: string;
 }

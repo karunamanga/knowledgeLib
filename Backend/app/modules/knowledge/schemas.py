@@ -42,6 +42,18 @@ class ResourceRead(BaseModel):
     category: Optional[CategoryRead] = None
     author_id: int
     author: AuthorRead
+    # File Storage and Preview
+    file_name: Optional[str] = None
+    file_path: Optional[str] = None
+    preview_path: Optional[str] = None
+    file_type: Optional[str] = None
+    mime_type: Optional[str] = None
+    storage_bucket: Optional[str] = "portal-files"
+    preview_url: Optional[str] = None
+    file_url: Optional[str] = None
+    download_url: Optional[str] = None
+
+    # Backward compatibility fields
     storage_key: Optional[str] = None
     original_filename: Optional[str] = None
     external_url: Optional[str] = None
@@ -50,7 +62,6 @@ class ResourceRead(BaseModel):
     view_count: int = 0
     download_count: int = 0
     tags: List[TagRead] = []
-    download_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

@@ -1,5 +1,8 @@
+import re
+import uuid
 from typing import Optional, List, Tuple, Dict, Any
 from sqlalchemy.orm import Session
+from app.core.config import settings
 from app.core.exceptions import EntityNotFoundException, PermissionDeniedException
 from app.modules.knowledge.models import Resource
 from app.modules.knowledge.repository import KnowledgeRepository
@@ -7,6 +10,7 @@ from app.modules.knowledge.schemas import ResourceCreate, ResourceUpdate
 from app.modules.categories.repository import CategoryRepository
 from app.modules.users.models import User
 from app.modules.audit.service import AuditService
+from app.modules.knowledge.thumbnail_generator import generate_document_thumbnail
 from app.integrations.storage.factory import get_storage_provider
 from app.shared.enums import AuditAction, ResourceType, RoleName, PermissionCode
 
@@ -63,17 +67,41 @@ class KnowledgeService:
             tag_obj = self.category_repo.get_or_create_tag(tag_name)
             tags.append(tag_obj)
 
-        storage_key = None
-        file_size = None
-        orig_name = None
+        file_path = None
+        preview_path = None
+        file_name = None
+        file_type = None
         mime = None
+        file_size = None
 
         if file_bytes and filename:
-            upload_meta = self.storage.upload(file_bytes, filename, content_type or "application/octet-stream")
-            storage_key = upload_meta["storage_key"]
-            orig_name = upload_meta["original_filename"]
-            file_size = upload_meta["file_size"]
-            mime = upload_meta["content_type"]
+            file_uuid = str(uuid.uuid4())
+            clean_filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
+            ext = (filename.split('.')[-1] if '.' in filename else '').upper()
+            file_type = ext
+            file_name = filename
+            file_size = len(file_bytes)
+            mime = content_type or "application/octet-stream"
+
+            file_path = f"knowledge-resources/user-{author.id}/original/{file_uuid}-{clean_filename}"
+            preview_path = f"knowledge-resources/user-{author.id}/previews/{file_uuid}-preview.png"
+
+            # 1. Upload original file
+            self.storage.upload(file_bytes, filename, mime, custom_key=file_path)
+
+            # 2. Generate and upload preview thumbnail
+            try:
+                thumb_bytes, _ = generate_document_thumbnail(file_bytes, filename, payload.title)
+                self.storage.upload(thumb_bytes, f"{file_uuid}-preview.png", "image/png", custom_key=preview_path)
+            except Exception as e:
+                print("Thumbnail generation error:", e)
+                try:
+                    fallback_bytes, _ = generate_document_thumbnail(b"", filename, payload.title)
+                    self.storage.upload(fallback_bytes, f"{file_uuid}-preview.png", "image/png", custom_key=preview_path)
+                except Exception:
+                    pass
+
+        bucket_name = getattr(settings, "SUPABASE_STORAGE_BUCKET", "portal-files")
 
         res = Resource(
             title=payload.title,
@@ -81,8 +109,14 @@ class KnowledgeService:
             resource_type=payload.resource_type,
             category_id=payload.category_id,
             author_id=author.id,
-            storage_key=storage_key,
-            original_filename=orig_name,
+            file_path=file_path,
+            preview_path=preview_path,
+            file_name=file_name,
+            file_type=file_type,
+            mime_type=mime,
+            storage_bucket=bucket_name,
+            storage_key=file_path,
+            original_filename=file_name,
             external_url=payload.external_url,
             file_size=file_size,
             content_type=mime,
@@ -112,7 +146,6 @@ class KnowledgeService:
         user_role_names = {r.name for r in actor.roles}
         is_admin = RoleName.ADMIN.value in user_role_names
         if res.author_id != actor.id and not is_admin:
-            # Check user perms
             user_perms = {p.code for r in actor.roles for p in r.permissions}
             if PermissionCode.KNOWLEDGE_UPDATE.value not in user_perms:
                 raise PermissionDeniedException("You can only edit your own resources")
@@ -153,10 +186,11 @@ class KnowledgeService:
             if PermissionCode.KNOWLEDGE_DELETE.value not in user_perms:
                 raise PermissionDeniedException("You can only delete your own resources")
 
-        # Delete physical file if exists
-        if res.storage_key:
+        # Delete physical files (original and preview)
+        target_keys = [res.file_path, res.storage_key, res.preview_path]
+        for key in set(filter(None, target_keys)):
             try:
-                self.storage.delete(res.storage_key)
+                self.storage.delete(key)
             except Exception:
                 pass
 
@@ -174,11 +208,59 @@ class KnowledgeService:
 
     def get_download_file(self, resource_id: int) -> Tuple[bytes, str, str]:
         res = self.get_resource_by_id(resource_id)
-        if not res.storage_key:
+        storage_key = res.file_path or res.storage_key
+        if not storage_key:
             raise EntityNotFoundException("Resource does not have a physical file attachment")
         
         self.repository.increment_downloads(res)
-        return self.storage.download(res.storage_key)
+        file_bytes, download_name, mime = self.storage.download(storage_key)
+        out_name = res.file_name or res.original_filename or download_name
+        out_mime = res.mime_type or res.content_type or mime
+        return file_bytes, out_name, out_mime
+
+    def get_preview_file(self, resource_id: int) -> Tuple[bytes, str]:
+        res = self.get_resource_by_id(resource_id)
+
+        # 1. Try saved preview_path
+        if res.preview_path:
+            try:
+                thumb_bytes, _, mime = self.storage.download(res.preview_path)
+                if thumb_bytes and len(thumb_bytes) > 0:
+                    return thumb_bytes, mime or "image/png"
+            except Exception:
+                pass
+
+        # 2. Try on-the-fly generation from original document
+        orig_key = res.file_path or res.storage_key
+        if orig_key:
+            try:
+                doc_bytes, _, _ = self.storage.download(orig_key)
+                if doc_bytes and len(doc_bytes) > 0:
+                    thumb_bytes, mime = generate_document_thumbnail(
+                        doc_bytes,
+                        res.file_name or res.original_filename or "document.pdf",
+                        res.title
+                    )
+                    # Cache the generated thumbnail
+                    try:
+                        file_uuid = str(uuid.uuid4())
+                        new_prev_path = f"knowledge-resources/user-{res.author_id}/previews/{file_uuid}-preview.png"
+                        self.storage.upload(thumb_bytes, f"{file_uuid}-preview.png", "image/png", custom_key=new_prev_path)
+                        res.preview_path = new_prev_path
+                        self.db.commit()
+                    except Exception:
+                        pass
+                    return thumb_bytes, mime
+            except Exception as e:
+                print("Dynamic preview generation error:", e)
+
+        # 3. Safe fallback preview graphic (Never return 404 or NoSuchKey)
+        fallback_bytes, mime = generate_document_thumbnail(
+            b"",
+            res.file_name or res.original_filename or f"{res.title}.pdf",
+            res.title
+        )
+        return fallback_bytes, mime
 
     def download_by_storage_key(self, storage_key: str) -> Tuple[bytes, str, str]:
         return self.storage.download(storage_key)

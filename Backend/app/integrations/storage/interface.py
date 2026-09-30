@@ -3,7 +3,7 @@ from typing import Dict, Any, Tuple, Optional
 
 class StorageInterface(ABC):
     @abstractmethod
-    def upload(self, file_content: bytes, original_filename: str, content_type: str) -> Dict[str, Any]:
+    def upload(self, file_content: bytes, original_filename: str, content_type: str, custom_key: Optional[str] = None) -> Dict[str, Any]:
         """
         Uploads a file to the storage provider and returns metadata:
         {

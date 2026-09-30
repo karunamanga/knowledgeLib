@@ -18,8 +18,10 @@ router = APIRouter(prefix="/knowledge", tags=["Knowledge Library"])
 
 def _format_resource(res, service: KnowledgeService) -> ResourceRead:
     data = ResourceRead.model_validate(res)
-    if res.storage_key:
-        data.download_url = service.storage.generate_url(res.storage_key)
+    data.preview_url = f"/api/v1/knowledge/{res.id}/preview"
+    if res.file_path or res.storage_key:
+        data.file_url = f"/api/v1/knowledge/{res.id}/download"
+        data.download_url = f"/api/v1/knowledge/{res.id}/download"
     return data
 
 @router.get("", response_model=APIResponse[PaginatedResponse[ResourceRead]])
@@ -180,7 +182,24 @@ def download_resource(
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
 
-@router.get("/files/{storage_key}")
+@router.get("/{resource_id}/preview")
+def preview_resource(
+    resource_id: int,
+    db: Session = Depends(get_db)
+):
+    service = KnowledgeService(db)
+    content, content_type = service.get_preview_file(resource_id)
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={
+            "Content-Type": content_type,
+            "Cache-Control": "public, max-age=86400",
+            "Content-Disposition": "inline"
+        }
+    )
+
+@router.get("/files/{storage_key:path}")
 def stream_file(
     storage_key: str,
     db: Session = Depends(get_db)
