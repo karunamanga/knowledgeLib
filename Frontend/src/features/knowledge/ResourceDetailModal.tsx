@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Resource } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -8,7 +8,6 @@ import { ResourceTypeBadge } from '../../components/common/Badge';
 import { UserAvatar } from '../../components/common/UserAvatar';
 import { knowledgeApi } from '../../api/endpoints';
 import { getAccessToken, getFullApiUrl } from '../../api/client';
-import { renderAsync } from 'docx-preview';
 import {
   Download,
   Calendar,
@@ -20,82 +19,6 @@ import {
   HardDrive,
   ExternalLink,
 } from 'lucide-react';
-
-interface WordViewerProps {
-  downloadEndpoint: string;
-  token: string | null;
-  previewImageUrl: string;
-}
-
-const WordViewer: React.FC<WordViewerProps> = ({ downloadEndpoint, token, previewImageUrl }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [loading, setLoading] = useState(true);
-  const [renderFailed, setRenderFailed] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setRenderFailed(false);
-
-    fetch(downloadEndpoint, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.blob();
-      })
-      .then(async (blob) => {
-        if (!active || !containerRef.current) return;
-        containerRef.current.innerHTML = '';
-        await renderAsync(blob, containerRef.current, undefined, {
-          inWrapper: false,
-          ignoreWidth: true,
-          experimental: true,
-          className: 'docx-preview-body',
-        });
-      })
-      .then(() => {
-        if (active) setLoading(false);
-      })
-      .catch((err) => {
-        if (active) {
-          console.warn('docx-preview warning, falling back to page 1 image:', err);
-          setRenderFailed(true);
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [downloadEndpoint, token]);
-
-  if (renderFailed) {
-    return (
-      <div className="flex items-center justify-center p-4">
-        <img
-          src={previewImageUrl}
-          alt="Document preview"
-          className="max-h-[620px] w-auto max-w-full rounded-xl shadow-md border border-slate-200 dark:border-slate-700 object-contain bg-white"
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white shadow-sm overflow-hidden text-left">
-      <div className="p-6 max-h-[650px] overflow-y-auto text-slate-900 bg-white">
-        {loading && (
-          <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-500">
-            <span className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-            <p className="text-xs font-medium">Loading document pages...</p>
-          </div>
-        )}
-        <div ref={containerRef} className="docx-viewer-content prose prose-slate max-w-none text-slate-900" />
-      </div>
-    </div>
-  );
-};
 
 interface ResourceDetailModalProps {
   resource: Resource | null;
@@ -270,88 +193,44 @@ export const ResourceDetailModal: React.FC<ResourceDetailModalProps> = ({
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
               Document Preview
             </h4>
-            <span className="text-[11px] text-slate-400">
-              {displayFileType} Viewer
+            <span className="text-[11px] font-medium text-slate-400">
+              {displayFileType} Preview
             </span>
           </div>
 
-          {isPdf ? (
-            /* 1. Real PDF Viewer: embedded native browser PDF reader with pypdfium2 fallback */
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-100 dark:bg-slate-900 min-h-[500px]">
-              <object
-                data={downloadEndpoint}
-                type="application/pdf"
-                className="w-full h-[650px] border-0"
-              >
-                <div className="flex flex-col items-center justify-center p-4 min-h-[400px]">
-                  {!imageError ? (
-                    <img
-                      src={previewImageUrl}
-                      alt={resource.title}
-                      className="max-h-[600px] w-auto max-w-full rounded-xl shadow-md border border-slate-200 dark:border-slate-700 object-contain bg-white"
-                      onError={() => setImageError(true)}
-                    />
-                  ) : (
-                    <div className="text-center py-10 space-y-3">
-                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                        Preview unavailable
-                      </p>
-                      <Button
-                        variant="gradient"
-                        size="sm"
-                        onClick={handleDownload}
-                        leftIcon={<Download className="w-4 h-4" />}
-                      >
-                        Download PDF to View
-                      </Button>
-                    </div>
-                  )}
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 p-4 sm:p-6 flex flex-col items-center justify-center min-h-[380px] relative overflow-hidden">
+            {!imageError ? (
+              <div className="flex items-center justify-center w-full">
+                <img
+                  src={previewImageUrl}
+                  alt={resource.title}
+                  className="max-h-[600px] w-auto max-w-full rounded-xl shadow-lg border border-slate-200 dark:border-slate-700/80 object-contain bg-white transition-opacity duration-300"
+                  onError={() => setImageError(true)}
+                />
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center p-8 text-center space-y-3">
+                <div className="p-3.5 rounded-2xl bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400">
+                  <FileText className="w-8 h-8" />
                 </div>
-              </object>
-            </div>
-          ) : isWordDoc ? (
-            /* 2. Real Word Document Viewer using docx-preview */
-            <WordViewer
-              downloadEndpoint={downloadEndpoint}
-              token={token}
-              previewImageUrl={previewImageUrl}
-            />
-          ) : (
-            /* 3. High-Resolution Visual Slide / Document Preview */
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 p-4 flex flex-col items-center justify-center min-h-[360px] relative overflow-hidden">
-              {!imageError ? (
-                <div className="flex items-center justify-center w-full">
-                  <img
-                    src={previewImageUrl}
-                    alt={resource.title}
-                    className="max-h-[540px] w-auto max-w-full rounded-xl shadow-md border border-slate-200 dark:border-slate-700 object-contain bg-white"
-                    onError={() => setImageError(true)}
-                  />
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center p-8 text-center space-y-3">
-                  <div className="p-3.5 rounded-2xl bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400">
-                    <FileText className="w-8 h-8" />
-                  </div>
-                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                    Preview unavailable
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs">
-                    You can download the original document to view all contents and full formatting.
-                  </p>
-                  <Button
-                    variant="gradient"
-                    size="sm"
-                    onClick={handleDownload}
-                    isLoading={isDownloading}
-                    leftIcon={<Download className="w-4 h-4" />}
-                  >
-                    Download Resource
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  Preview unavailable
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs">
+                  You can download the original document to view all contents and full formatting.
+                </p>
+                <Button
+                  variant="gradient"
+                  size="sm"
+                  onClick={handleDownload}
+                  isLoading={isDownloading}
+                  leftIcon={<Download className="w-4 h-4" />}
+                >
+                  Download Resource
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Tags */}

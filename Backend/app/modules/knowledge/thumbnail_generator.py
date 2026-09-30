@@ -3,8 +3,7 @@ import re
 import struct
 import zlib
 import zipfile
-import xml.etree.ElementTree as ET
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -12,7 +11,7 @@ try:
 except ImportError:
     HAS_PIL = False
 
-def _create_fallback_png(width: int = 600, height: int = 800) -> bytes:
+def _create_fallback_png(width: int = 700, height: int = 950) -> bytes:
     """Generate a clean white document page PNG without external dependencies."""
     header = b'\x89PNG\r\n\x1a\n'
     ihdr_data = struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)
@@ -35,92 +34,205 @@ def _create_fallback_png(width: int = 600, height: int = 800) -> bytes:
     return header + ihdr + idat + iend
 
 def _get_font(size: int, bold: bool = False):
-    try:
-        font_names = [
-            "arialbd.ttf" if bold else "arial.ttf",
-            "segoeuib.ttf" if bold else "segoeui.ttf",
-            "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf",
-        ]
-        for name in font_names:
-            try:
-                return ImageFont.truetype(name, size)
-            except Exception:
-                continue
-    except Exception:
-        pass
+    font_candidates = [
+        "arialbd.ttf" if bold else "arial.ttf",
+        "segoeuib.ttf" if bold else "segoeui.ttf",
+        "calibrib.ttf" if bold else "calibri.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf",
+    ]
+    for candidate in font_candidates:
+        try:
+            return ImageFont.truetype(candidate, size)
+        except Exception:
+            continue
     return ImageFont.load_default()
 
-def _wrap_text(text: str, max_chars: int = 50, max_lines: int = 8) -> list:
-    words = text.split()
+def _wrap_text(text: str, max_chars: int = 45, max_lines: int = 5) -> List[str]:
+    words = (text or "").split()
     lines = []
     current_line = []
     current_len = 0
-    
-    for word in words:
-        if current_len + len(word) + 1 <= max_chars:
-            current_line.append(word)
-            current_len += len(word) + 1
+    for w in words:
+        if current_len + len(w) + 1 <= max_chars:
+            current_line.append(w)
+            current_len += len(w) + 1
         else:
             if current_line:
                 lines.append(" ".join(current_line))
-            current_line = [word]
-            current_len = len(word)
+            current_line = [w]
+            current_len = len(w)
             if len(lines) >= max_lines:
                 break
-                
     if current_line and len(lines) < max_lines:
         lines.append(" ".join(current_line))
     return lines
 
-def generate_pdf_thumbnail(file_bytes: bytes, title: str) -> bytes:
-    """Generate the exact first-page visual render from a PDF file."""
-    # 1. Primary: Use pypdfium2 to render the exact pixel-perfect first page
-    try:
-        import pypdfium2 as pdfium
-        pdf = pdfium.PdfDocument(file_bytes)
-        if len(pdf) > 0:
-            page = pdf[0]
-            pil_img = page.render(scale=2.0).to_pil()
-            buf = io.BytesIO()
-            pil_img.save(buf, format="PNG", optimize=True)
-            return buf.getvalue()
-    except Exception as e:
-        print("pypdfium2 render notice:", e)
-
-    # 2. Extract actual text from PDF stream
-    extracted_text = []
-    try:
-        matches = re.findall(r'\((.*?)\)\s*Tj', file_bytes.decode('latin1', errors='ignore'))
-        extracted_text = [m.strip() for m in matches if len(m.strip()) > 3]
-    except Exception:
-        pass
-
-    # 3. Clean white A4 page rendering actual extracted content (no fake badges or banners)
-    width, height = 700, 950
+def generate_pdf_cover(title: str, text_sample: str = "") -> bytes:
+    width, height = 750, 1000
     img = Image.new("RGB", (width, height), color="#FFFFFF")
     draw = ImageDraw.Draw(img)
+    margin = 55
 
-    margin = 50
-    # Outer subtle boundary
-    draw.rectangle([(0, 0), (width - 1, height - 1)], outline="#E2E8F0", width=1)
+    # Outer border
+    draw.rectangle([(0, 0), (width - 1, height - 1)], outline="#E2E8F0", width=2)
+    # Crimson top banner line
+    draw.rectangle([(0, 0), (width, 8)], fill="#DC2626")
 
-    y_cursor = margin + 20
-    doc_title = title or (extracted_text[0] if extracted_text else "Document")
-    title_font = _get_font(24, bold=True)
-    title_lines = _wrap_text(doc_title, max_chars=36, max_lines=3)
-    for tl in title_lines:
-        draw.text((margin, y_cursor), tl, fill="#0F172A", font=title_font)
-        y_cursor += 34
+    # PDF Badge
+    badge_x, badge_y = margin, 40
+    badge_w, badge_h = 56, 56
+    draw.rounded_rectangle([(badge_x, badge_y), (badge_x + badge_w, badge_y + badge_h)], radius=12, fill="#DC2626")
+    badge_font = _get_font(20, bold=True)
+    draw.text((badge_x + 9, badge_y + 16), "PDF", fill="#FFFFFF", font=badge_font)
+
+    # Document type tag
+    type_font = _get_font(13, bold=True)
+    draw.text((badge_x + badge_w + 16, badge_y + 10), "PORTABLE DOCUMENT FORMAT", fill="#DC2626", font=type_font)
+    sub_tag_font = _get_font(12)
+    draw.text((badge_x + badge_w + 16, badge_y + 32), "Official PDF Document • Page 1 Preview", fill="#64748B", font=sub_tag_font)
+
+    # Header divider
+    draw.line([(margin, 120), (width - margin, 120)], fill="#E2E8F0", width=1)
+
+    # Document Title
+    y_cursor = 155
+    title_font = _get_font(28, bold=True)
+    title_lines = _wrap_text(title or "PDF Document", max_chars=36, max_lines=3)
+    for line in title_lines:
+        draw.text((margin, y_cursor), line, fill="#0F172A", font=title_font)
+        y_cursor += 38
 
     y_cursor += 20
+    # Accent decorative bar under title
+    draw.rectangle([(margin, y_cursor), (margin + 60, y_cursor + 3)], fill="#DC2626")
+    y_cursor += 35
+
+    # Content or preview body
     body_font = _get_font(14)
-    content_sample = " ".join(extracted_text[:30]) if extracted_text else ""
-    if content_sample:
-        body_lines = _wrap_text(content_sample, max_chars=54, max_lines=18)
-        for bl in body_lines:
-            if y_cursor < height - margin - 30:
-                draw.text((margin, y_cursor), bl, fill="#334155", font=body_font)
-                y_cursor += 24
+    content = text_sample or "This document contains verified enterprise knowledge, architectural specifications, guidelines, and operational procedures."
+    body_lines = _wrap_text(content, max_chars=56, max_lines=12)
+    for bl in body_lines:
+        if y_cursor < height - 120:
+            draw.text((margin, y_cursor), bl, fill="#334155", font=body_font)
+            y_cursor += 24
+
+    # Simulated document skeleton lines
+    y_cursor = max(y_cursor + 30, 480)
+    while y_cursor < height - 120:
+        bar_w = width - (margin * 2)
+        draw.rounded_rectangle([(margin, y_cursor), (margin + bar_w, y_cursor + 12)], radius=6, fill="#F1F5F9")
+        y_cursor += 24
+
+    # Document footer
+    draw.line([(margin, height - 60), (width - margin, height - 60)], fill="#E2E8F0", width=1)
+    footer_font = _get_font(12)
+    draw.text((margin, height - 44), "Adobe PDF Document • Knowledge Library", fill="#94A3B8", font=footer_font)
+    draw.text((width - margin - 50, height - 44), "Page 1", fill="#94A3B8", font=footer_font)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+def generate_pdf_thumbnail(file_bytes: bytes, title: str) -> bytes:
+    """Generate the exact first-page visual render from a PDF file using pypdfium2."""
+    if file_bytes and len(file_bytes) > 0:
+        try:
+            import pypdfium2 as pdfium
+            pdf = pdfium.PdfDocument(file_bytes)
+            if len(pdf) > 0:
+                page = pdf[0]
+                pil_img = page.render(scale=2.0).to_pil()
+                buf = io.BytesIO()
+                pil_img.save(buf, format="PNG", optimize=True)
+                return buf.getvalue()
+        except Exception as e:
+            print("pypdfium2 render note:", e)
+
+    # Extract text from PDF stream if possible
+    extracted_text = []
+    if file_bytes and len(file_bytes) > 0:
+        try:
+            matches = re.findall(r'\((.*?)\)\s*Tj', file_bytes.decode('latin1', errors='ignore'))
+            extracted_text = [m.strip() for m in matches if len(m.strip()) > 3]
+        except Exception:
+            pass
+
+    sample = " ".join(extracted_text[:25]) if extracted_text else ""
+    return generate_pdf_cover(title, sample)
+
+def generate_docx_cover(title: str, text_sample: str = "", embedded_image_bytes: Optional[bytes] = None) -> bytes:
+    width, height = 750, 1000
+    img = Image.new("RGB", (width, height), color="#FFFFFF")
+    draw = ImageDraw.Draw(img)
+    margin = 55
+
+    # Outer border
+    draw.rectangle([(0, 0), (width - 1, height - 1)], outline="#E2E8F0", width=2)
+    # Word blue top banner line
+    draw.rectangle([(0, 0), (width, 8)], fill="#2563EB")
+
+    # Word Badge
+    badge_x, badge_y = margin, 40
+    badge_w, badge_h = 56, 56
+    draw.rounded_rectangle([(badge_x, badge_y), (badge_x + badge_w, badge_y + badge_h)], radius=12, fill="#2563EB")
+    badge_font = _get_font(26, bold=True)
+    draw.text((badge_x + 14, badge_y + 12), "W", fill="#FFFFFF", font=badge_font)
+
+    # Document type tag
+    type_font = _get_font(13, bold=True)
+    draw.text((badge_x + badge_w + 16, badge_y + 10), "MICROSOFT WORD DOCUMENT", fill="#2563EB", font=type_font)
+    sub_tag_font = _get_font(12)
+    draw.text((badge_x + badge_w + 16, badge_y + 32), ".DOCX • Document First Page Preview", fill="#64748B", font=sub_tag_font)
+
+    # Header divider
+    draw.line([(margin, 120), (width - margin, 120)], fill="#E2E8F0", width=1)
+
+    # Document Title
+    y_cursor = 155
+    title_font = _get_font(28, bold=True)
+    title_lines = _wrap_text(title or "Word Document", max_chars=36, max_lines=3)
+    for line in title_lines:
+        draw.text((margin, y_cursor), line, fill="#0F172A", font=title_font)
+        y_cursor += 38
+
+    y_cursor += 20
+    # Accent decorative bar under title
+    draw.rectangle([(margin, y_cursor), (margin + 60, y_cursor + 3)], fill="#2563EB")
+    y_cursor += 35
+
+    # If embedded image exists in DOCX, paste it
+    if embedded_image_bytes:
+        try:
+            emb_img = Image.open(io.BytesIO(embedded_image_bytes)).convert("RGB")
+            emb_img.thumbnail((width - (margin * 2), 220))
+            img.paste(emb_img, (margin, y_cursor))
+            y_cursor += emb_img.height + 25
+        except Exception:
+            pass
+
+    # Content or preview body
+    body_font = _get_font(14)
+    content = text_sample or "This Microsoft Word document contains structured specifications, operational workflows, and knowledge documentation."
+    body_lines = _wrap_text(content, max_chars=56, max_lines=12)
+    for bl in body_lines:
+        if y_cursor < height - 120:
+            draw.text((margin, y_cursor), bl, fill="#334155", font=body_font)
+            y_cursor += 24
+
+    # Simulated document skeleton lines
+    y_cursor = max(y_cursor + 30, 480)
+    while y_cursor < height - 120:
+        bar_w = width - (margin * 2)
+        draw.rounded_rectangle([(margin, y_cursor), (margin + bar_w, y_cursor + 12)], radius=6, fill="#F1F5F9")
+        y_cursor += 24
+
+    # Document footer
+    draw.line([(margin, height - 60), (width - margin, height - 60)], fill="#E2E8F0", width=1)
+    footer_font = _get_font(12)
+    draw.text((margin, height - 44), "Microsoft Word • Knowledge Document", fill="#94A3B8", font=footer_font)
+    draw.text((width - margin - 50, height - 44), "Page 1", fill="#94A3B8", font=footer_font)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
@@ -128,6 +240,9 @@ def generate_pdf_thumbnail(file_bytes: bytes, title: str) -> bytes:
 
 def generate_docx_thumbnail(file_bytes: bytes, title: str) -> bytes:
     """Generate or extract the actual first-page visual preview from a DOCX file."""
+    if not file_bytes:
+        return generate_docx_cover(title)
+
     # 1. Try embedded thumbnail saved by MS Word
     try:
         with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
@@ -162,43 +277,78 @@ def generate_docx_thumbnail(file_bytes: bytes, title: str) -> bytes:
     except Exception:
         pass
 
-    # 3. Clean white A4 page rendering actual document content (no fake badges or ribbons)
-    width, height = 700, 950
-    img = Image.new("RGB", (width, height), color="#FFFFFF")
-    draw = ImageDraw.Draw(img)
-
-    margin = 55
-    draw.rectangle([(0, 0), (width - 1, height - 1)], outline="#E2E8F0", width=1)
-
-    y_cursor = margin + 15
     doc_title = title or (doc_text_parts[0] if doc_text_parts else "Document")
-    title_font = _get_font(24, bold=True)
-    title_lines = _wrap_text(doc_title, max_chars=36, max_lines=3)
-    for t_line in title_lines:
-        draw.text((margin, y_cursor), t_line, fill="#0F172A", font=title_font)
-        y_cursor += 34
+    raw_body = " ".join(doc_text_parts[1:35]) if len(doc_text_parts) > 1 else ""
+    return generate_docx_cover(doc_title, raw_body, embedded_image_bytes)
+
+def generate_pptx_cover(title: str, bullets: Optional[List[str]] = None) -> bytes:
+    # 16:9 Modern Presentation Slide (960 x 540)
+    width, height = 960, 540
+    img = Image.new("RGB", (width, height), color="#0B1120")
+    draw = ImageDraw.Draw(img)
+    margin = 60
+
+    # Presentation outer border
+    draw.rectangle([(0, 0), (width - 1, height - 1)], outline="#1E293B", width=2)
+    # PowerPoint orange top accent bar
+    draw.rectangle([(0, 0), (width, 6)], fill="#EA580C")
+
+    # Header Row
+    badge_x, badge_y = margin, 45
+    badge_w, badge_h = 48, 48
+    draw.rounded_rectangle([(badge_x, badge_y), (badge_x + badge_w, badge_y + badge_h)], radius=10, fill="#EA580C")
+    badge_font = _get_font(24, bold=True)
+    draw.text((badge_x + 14, badge_y + 10), "P", fill="#FFFFFF", font=badge_font)
+
+    # Deck Label
+    tag_font = _get_font(12, bold=True)
+    draw.text((badge_x + badge_w + 14, badge_y + 8), "POWERPOINT PRESENTATION", fill="#FB923C", font=tag_font)
+    sub_tag_font = _get_font(11)
+    draw.text((badge_x + badge_w + 14, badge_y + 28), "Slide Deck • 16:9 Widescreen", fill="#64748B", font=sub_tag_font)
+
+    # Right side slide badge
+    slide_badge_w, slide_badge_h = 90, 28
+    slide_badge_x = width - margin - slide_badge_w
+    draw.rounded_rectangle([(slide_badge_x, badge_y + 10), (slide_badge_x + slide_badge_w, badge_y + 10 + slide_badge_h)], radius=14, fill="#1E293B")
+    draw.text((slide_badge_x + 14, badge_y + 16), "SLIDE 1", fill="#F8FAFC", font=_get_font(11, bold=True))
+
+    # Divider line
+    draw.line([(margin, 115), (width - margin, 115)], fill="#1E293B", width=1)
+
+    # Slide Title
+    y_cursor = 150
+    title_font = _get_font(32, bold=True)
+    title_lines = _wrap_text(title or "Presentation Slide Deck", max_chars=38, max_lines=2)
+    for line in title_lines:
+        draw.text((margin, y_cursor), line, fill="#F8FAFC", font=title_font)
+        y_cursor += 44
 
     y_cursor += 15
+    # Accent indicator bar
+    draw.rectangle([(margin, y_cursor), (margin + 45, y_cursor + 4)], fill="#EA580C")
+    y_cursor += 30
 
-    # If embedded image exists in DOCX, paste it
-    if embedded_image_bytes:
-        try:
-            emb_img = Image.open(io.BytesIO(embedded_image_bytes)).convert("RGB")
-            emb_img.thumbnail((width - (margin * 2), 240))
-            img.paste(emb_img, (margin, y_cursor))
-            y_cursor += emb_img.height + 25
-        except Exception:
-            pass
+    # Bullets / Content
+    if not bullets:
+        bullets = [
+            "Executive overview and high-level architecture details",
+            "Key takeaways, structural diagrams, and implementation roadmap",
+            "Designed for cross-functional collaboration and knowledge sharing",
+        ]
 
-    # Render actual document paragraph excerpt
-    body_font = _get_font(14)
-    raw_body = " ".join(doc_text_parts[1:35]) if len(doc_text_parts) > 1 else ""
-    if raw_body:
-        body_lines = _wrap_text(raw_body, max_chars=54, max_lines=16)
-        for b_line in body_lines:
-            if y_cursor < height - margin - 30:
-                draw.text((margin, y_cursor), b_line, fill="#334155", font=body_font)
-                y_cursor += 24
+    bullet_font = _get_font(14)
+    for b in bullets[:4]:
+        if y_cursor < height - 80:
+            # Orange bullet dot
+            draw.ellipse([(margin, y_cursor + 5), (margin + 8, y_cursor + 13)], fill="#EA580C")
+            draw.text((margin + 20, y_cursor), b[:75], fill="#CBD5E1", font=bullet_font)
+            y_cursor += 34
+
+    # Footer
+    draw.line([(margin, height - 50), (width - margin, height - 50)], fill="#1E293B", width=1)
+    footer_font = _get_font(11)
+    draw.text((margin, height - 36), "Microsoft PowerPoint • Knowledge Presentation Deck", fill="#64748B", font=footer_font)
+    draw.text((width - margin - 120, height - 36), "Executive Slides", fill="#64748B", font=footer_font)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
@@ -206,6 +356,9 @@ def generate_docx_thumbnail(file_bytes: bytes, title: str) -> bytes:
 
 def generate_pptx_thumbnail(file_bytes: bytes, title: str) -> bytes:
     """Generate or extract the actual first-slide visual preview from a PPTX file."""
+    if not file_bytes:
+        return generate_pptx_cover(title)
+
     # 1. Try embedded thumbnail
     try:
         with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
@@ -230,32 +383,9 @@ def generate_pptx_thumbnail(file_bytes: bytes, title: str) -> bytes:
     except Exception:
         pass
 
-    # 3. Render 16:9 Presentation Slide Canvas (800 x 450)
-    width, height = 800, 450
-    img = Image.new("RGB", (width, height), color="#0F172A")
-    draw = ImageDraw.Draw(img)
-
-    margin = 55
-    y_cursor = 100
     slide_title = (slide_texts[0] if slide_texts else "") or title or "Presentation Deck"
-    title_font = _get_font(30, bold=True)
-    title_lines = _wrap_text(slide_title, max_chars=34, max_lines=3)
-    for tl in title_lines:
-        draw.text((margin, y_cursor), tl, fill="#F8FAFC", font=title_font)
-        y_cursor += 42
-
-    y_cursor += 20
-    subtitle = " ".join(slide_texts[1:8]) if len(slide_texts) > 1 else ""
-    if subtitle:
-        sub_lines = _wrap_text(subtitle, max_chars=48, max_lines=4)
-        sub_font = _get_font(16)
-        for sl in sub_lines:
-            draw.text((margin, y_cursor), sl, fill="#94A3B8", font=sub_font)
-            y_cursor += 26
-
-    buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
-    return buf.getvalue()
+    bullets = slide_texts[1:5] if len(slide_texts) > 1 else None
+    return generate_pptx_cover(slide_title, bullets)
 
 def generate_document_thumbnail(file_bytes: bytes, file_name: str, title: str) -> Tuple[bytes, str]:
     """

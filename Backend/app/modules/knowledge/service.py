@@ -220,8 +220,33 @@ class KnowledgeService:
 
     def get_preview_file(self, resource_id: int) -> Tuple[bytes, str]:
         res = self.get_resource_by_id(resource_id)
+        orig_key = res.file_path or res.storage_key
+        filename = res.file_name or res.original_filename or f"{res.title}.pdf"
 
-        # 1. Try saved preview_path
+        # 1. Generate real first-page / cover directly from the original document
+        if orig_key:
+            try:
+                doc_bytes, _, _ = self.storage.download(orig_key)
+                if doc_bytes and len(doc_bytes) > 0:
+                    thumb_bytes, mime = generate_document_thumbnail(
+                        doc_bytes,
+                        filename,
+                        res.title
+                    )
+                    # Cache updated thumbnail
+                    try:
+                        if not res.preview_path:
+                            file_uuid = str(uuid.uuid4())
+                            res.preview_path = f"knowledge-resources/user-{res.author_id}/previews/{file_uuid}-preview.png"
+                        self.storage.upload(thumb_bytes, "preview.png", "image/png", custom_key=res.preview_path)
+                        self.db.commit()
+                    except Exception:
+                        pass
+                    return thumb_bytes, mime
+            except Exception as e:
+                print("Dynamic preview generation error:", e)
+
+        # 2. Try saved preview_path if original file download failed
         if res.preview_path:
             try:
                 thumb_bytes, _, mime = self.storage.download(res.preview_path)
@@ -230,34 +255,10 @@ class KnowledgeService:
             except Exception:
                 pass
 
-        # 2. Try on-the-fly generation from original document
-        orig_key = res.file_path or res.storage_key
-        if orig_key:
-            try:
-                doc_bytes, _, _ = self.storage.download(orig_key)
-                if doc_bytes and len(doc_bytes) > 0:
-                    thumb_bytes, mime = generate_document_thumbnail(
-                        doc_bytes,
-                        res.file_name or res.original_filename or "document.pdf",
-                        res.title
-                    )
-                    # Cache the generated thumbnail
-                    try:
-                        file_uuid = str(uuid.uuid4())
-                        new_prev_path = f"knowledge-resources/user-{res.author_id}/previews/{file_uuid}-preview.png"
-                        self.storage.upload(thumb_bytes, f"{file_uuid}-preview.png", "image/png", custom_key=new_prev_path)
-                        res.preview_path = new_prev_path
-                        self.db.commit()
-                    except Exception:
-                        pass
-                    return thumb_bytes, mime
-            except Exception as e:
-                print("Dynamic preview generation error:", e)
-
-        # 3. Safe fallback preview graphic (Never return 404 or NoSuchKey)
+        # 3. Safe fallback document cover (Never 404 or NoSuchKey)
         fallback_bytes, mime = generate_document_thumbnail(
             b"",
-            res.file_name or res.original_filename or f"{res.title}.pdf",
+            filename,
             res.title
         )
         return fallback_bytes, mime
